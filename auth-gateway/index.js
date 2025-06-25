@@ -1,19 +1,36 @@
 require('dotenv').config();
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 4003;
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// JWT middleware globally applied to all proxied services
-const auth = require('./middlewares/authMiddleware');
+// Middleware pour vérifier le token
+app.use((req, res, next) => {
+  if (req.path === '/login' || req.path === '/register') {
+    return next();
+  }
 
-// Routes
-app.use('/bids', auth, createProxyMiddleware({ target: 'http://localhost:5002', changeOrigin: true }));
-app.use('/auctions', auth, createProxyMiddleware({ target: 'http://localhost:5001', changeOrigin: true }));
+  const token = req.headers['authorization'];
+  if (!token) {
+    return res.status(401).json({ message: 'Token manquant' });
+  }
 
-// Public routes
-app.use('/users', createProxyMiddleware({ target: 'http://localhost:5000', changeOrigin: true }));
+  try {
+    jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (err) {
+    res.status(401).json({ message: 'Token invalide' });
+  }
+});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Auth Gateway running on port ${PORT}`));
+// Proxies vers les autres services
+app.use('/api/users', createProxyMiddleware({ target: 'http://localhost:4000', changeOrigin: true }));
+app.use('/api/auctions', createProxyMiddleware({ target: 'http://localhost:4001', changeOrigin: true }));
+app.use('/api/bids', createProxyMiddleware({ target: 'http://localhost:4002', changeOrigin: true }));
+
+app.listen(PORT, () => {
+  console.log(`Auth Gateway running on port ${PORT}`);
+});
