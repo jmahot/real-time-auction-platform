@@ -1,29 +1,59 @@
 import React, { useState, createContext, useContext } from "react";
 
-// ----- CONTEXTE AUTHENTIFICATION -----
+// --- CONTEXTE AUTHENTIFICATION ---
 const AuthContext = createContext();
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
 
-  // Simule login (à remplacer par appel API)
-  const login = (email, password) => {
-    if (email === "test@test.com" && password === "123456") {
-      setUser({ email });
+  const register = async (username, email, password) => {
+    try {
+      const res = await fetch("http://localhost:4000/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, email, password }),
+      });
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error);
+      }
+      setUser({ username, email });
       return true;
+    } catch (err) {
+      alert("Erreur inscription : " + err.message);
+      return false;
     }
-    return false;
   };
 
-  const logout = () => setUser(null);
+  const login = async (email, password) => {
+    try {
+      const res = await fetch("http://localhost:4000/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }), // corrigé ici : email au lieu de username
+      });
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error);
+      }
+      const data = await res.json();
+      setToken(data.token);
+      setUser({ username: data.username });
+      return true;
+    } catch (err) {
+      alert("Erreur login : " + err.message);
+      return false;
+    }
+  };
 
-  const register = (email, password) => {
-    // Simule inscription
-    setUser({ email });
+  const logout = () => {
+    setUser(null);
+    setToken(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, register }}>
+    <AuthContext.Provider value={{ user, token, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   );
@@ -33,54 +63,52 @@ function useAuth() {
   return useContext(AuthContext);
 }
 
-// ----- COMPONENTES UI -----
-
-// Navbar simple
-function NavBar() {
-  const { user, logout } = useAuth();
-  return (
-    <nav style={{ padding: "1em", borderBottom: "1px solid #ccc" }}>
-      <span style={{ marginRight: 20 }}>Real-Time Auction</span>
-      {user ? (
-        <>
-          <span style={{ marginRight: 10 }}>Hello, {user.email}</span>
-          <button onClick={logout}>Logout</button>
-        </>
-      ) : (
-        <span>Hello ! please login 👋</span>
-      )}
-    </nav>
-  );
-}
-
-// Formulaire login + register
+// --- FORMULAIRE LOGIN / REGISTER ---
 function LoginRegisterForm() {
   const { login, register, user } = useAuth();
+
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [error, setError] = useState("");
 
-  if (user) return <p>You are logged in as {user.email}</p>;
+  if (user) return <p>You are logged in as {user.username || user.email}</p>;
 
-  const handleSubmit = e => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+
     if (isRegister) {
-      register(email, password);
+      if (!username) return setError("Username is required for registration");
+      const ok = await register(username, email, password);
+      if (!ok) setError("Registration failed");
     } else {
-      const ok = login(email, password);
+      const ok = await login(email, password);
       if (!ok) setError("Invalid credentials");
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ maxWidth: 300, margin: "auto"}}>
+    <form onSubmit={handleSubmit} style={{ maxWidth: 300, margin: "auto" }}>
       <h2>{isRegister ? "Register" : "Login"}</h2>
+
+      {isRegister && (
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+          style={{ display: "block", marginBottom: 10, width: "90%" }}
+        />
+      )}
+
       <input
         type="email"
         placeholder="Email"
         value={email}
-        onChange={e => setEmail(e.target.value)}
+        onChange={(e) => setEmail(e.target.value)}
         required
         style={{ display: "block", marginBottom: 10, width: "90%" }}
       />
@@ -88,12 +116,15 @@ function LoginRegisterForm() {
         type="password"
         placeholder="Password"
         value={password}
-        onChange={e => setPassword(e.target.value)}
+        onChange={(e) => setPassword(e.target.value)}
         required
         style={{ display: "block", marginBottom: 10, width: "90%" }}
       />
+
       {error && <p style={{ color: "red" }}>{error}</p>}
+
       <button type="submit">{isRegister ? "Register" : "Login"}</button>
+
       <p>
         <button
           type="button"
@@ -101,7 +132,13 @@ function LoginRegisterForm() {
             setError("");
             setIsRegister(!isRegister);
           }}
-          style={{ marginTop: 10, background: "none", border: "none", color: "blue", cursor: "pointer" }}
+          style={{
+            marginTop: 10,
+            background: "none",
+            border: "none",
+            color: "blue",
+            cursor: "pointer",
+          }}
         >
           {isRegister ? "Already have an account? Login" : "No account? Register"}
         </button>
@@ -110,19 +147,13 @@ function LoginRegisterForm() {
   );
 }
 
-// Liste des enchères
-function AuctionList({ onSelect }) {
-  // Exemple de données en dur, remplacer par fetch API
-  const [auctions] = useState([
-    { id: 1, title: "Samsung S24", current_price: 1200 },
-    { id: 2, title: "MacBook Pro 16\"", current_price: 2500 },
-  ]);
-
+// --- COMPONENTES ENCHERES ---
+function AuctionList({ auctions, onSelect }) {
   return (
     <div>
       <h3>Auctions</h3>
       <ul style={{ listStyle: "none", padding: 0 }}>
-        {auctions.map(a => (
+        {auctions.map((a) => (
           <li
             key={a.id}
             style={{ padding: 10, border: "1px solid #ddd", marginBottom: 5, cursor: "pointer" }}
@@ -136,12 +167,11 @@ function AuctionList({ onSelect }) {
   );
 }
 
-// Formulaire création enchère
 function AuctionCreate({ onCreate }) {
   const [title, setTitle] = useState("");
   const [startingPrice, setStartingPrice] = useState("");
 
-  const handleSubmit = e => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!title || !startingPrice) return alert("Please fill all fields");
     const newAuction = {
@@ -161,29 +191,28 @@ function AuctionCreate({ onCreate }) {
         type="text"
         placeholder="Title"
         value={title}
-        onChange={e => setTitle(e.target.value)}
+        onChange={(e) => setTitle(e.target.value)}
         required
-        style={{ display: "block", marginBottom: 10, width: "100%" }}
+        style={{ display: "block", marginBottom: 10, width: "95%" }}
       />
       <input
         type="number"
         placeholder="Starting Price"
         value={startingPrice}
-        onChange={e => setStartingPrice(e.target.value)}
+        onChange={(e) => setStartingPrice(e.target.value)}
         required
-        style={{ display: "block", marginBottom: 10, width: "100%" }}
+        style={{ display: "block", marginBottom: 10, width: "95%" }}
       />
       <button type="submit">Create</button>
     </form>
   );
 }
 
-// Liste des offres pour une enchère
 function BidList({ bids }) {
   if (!bids.length) return <p>No bids yet.</p>;
   return (
     <ul style={{ listStyle: "none", padding: 0 }}>
-      {bids.map(b => (
+      {bids.map((b) => (
         <li key={b.id}>
           User {b.user_id} bid ${b.amount} at {new Date(b.timestamp).toLocaleTimeString()}
         </li>
@@ -192,11 +221,10 @@ function BidList({ bids }) {
   );
 }
 
-// Formulaire pour faire une offre
 function BidForm({ auction, onPlaceBid }) {
   const [amount, setAmount] = useState("");
 
-  const handleSubmit = e => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (Number(amount) <= auction.current_price) {
       alert(`Bid must be higher than current price: $${auction.current_price}`);
@@ -212,7 +240,7 @@ function BidForm({ auction, onPlaceBid }) {
         type="number"
         placeholder={`Bid more than $${auction.current_price}`}
         value={amount}
-        onChange={e => setAmount(e.target.value)}
+        onChange={(e) => setAmount(e.target.value)}
         required
       />
       <button type="submit">Place Bid</button>
@@ -220,7 +248,7 @@ function BidForm({ auction, onPlaceBid }) {
   );
 }
 
-// PAGE PRINCIPALE qui combine tout
+// --- PAGE ENCHERES (après login) ---
 function AuctionPage() {
   const { user } = useAuth();
   const [selectedAuction, setSelectedAuction] = useState(null);
@@ -230,24 +258,19 @@ function AuctionPage() {
   ]);
   const [bids, setBids] = useState([]);
 
-  // Ajouter une nouvelle enchère
-  const handleCreateAuction = auction => {
-    setAuctions(prev => [...prev, auction]);
+  const handleCreateAuction = (auction) => {
+    setAuctions((prev) => [...prev, auction]);
   };
 
-  // Sélection enchère
-  const handleSelectAuction = auction => {
+  const handleSelectAuction = (auction) => {
     setSelectedAuction(auction);
-    // Reset les bids ou charger depuis API
-    setBids([]);
+    setBids([]); // à remplacer par récupération bids backend plus tard
   };
 
-  // Ajouter une offre
-  const handlePlaceBid = bid => {
-    setBids(prev => [...prev, bid]);
-    // Met à jour le prix courant
-    setAuctions(prev =>
-      prev.map(a => (a.id === bid.auction_id ? { ...a, current_price: bid.amount } : a))
+  const handlePlaceBid = (bid) => {
+    setBids((prev) => [...prev, bid]);
+    setAuctions((prev) =>
+      prev.map((a) => (a.id === bid.auction_id ? { ...a, current_price: bid.amount } : a))
     );
   };
 
@@ -255,13 +278,14 @@ function AuctionPage() {
 
   return (
     <div style={{ maxWidth: 600, margin: "auto" }}>
-      <h2>Welcome {user.email}</h2>
+      <h2>Welcome {user.username}</h2>
       <AuctionCreate onCreate={handleCreateAuction} />
-      <AuctionList onSelect={handleSelectAuction} auctions={auctions} />
+      <AuctionList auctions={auctions} onSelect={handleSelectAuction} />
       {selectedAuction && (
-        <div style={{ marginTop: 20 }}>
-          <h3>Selected Auction: {selectedAuction.title}</h3>
-          <BidList bids={bids.filter(b => b.auction_id === selectedAuction.id)} />
+        <div>
+          <h3>{selectedAuction.title}</h3>
+          <p>Current price: ${selectedAuction.current_price}</p>
+          <BidList bids={bids} />
           <BidForm auction={selectedAuction} onPlaceBid={handlePlaceBid} />
         </div>
       )}
@@ -269,21 +293,54 @@ function AuctionPage() {
   );
 }
 
-// --------- APP ROOT ---------
+// --- HEADER avec bouton Logout ---
+function Header() {
+  const { user, logout } = useAuth();
+
+  return (
+    <header
+      style={{
+        padding: "10px 20px",
+        backgroundColor: "#333",
+        color: "white",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <h1 style={{ margin: 0 }}>Auction Platform</h1>
+      {user && (
+        <button
+          onClick={logout}
+          style={{
+            padding: "5px 10px",
+            cursor: "pointer",
+            backgroundColor: "#f44336",
+            color: "white",
+            border: "none",
+            borderRadius: 3,
+          }}
+        >
+          Logout
+        </button>
+      )}
+    </header>
+  );
+}
+
+// --- APP PRINCIPALE ---
 function App() {
   const { user } = useAuth();
 
   return (
     <>
-      <NavBar />
-      <div style={{ padding: 20 }}>
-        {!user ? <LoginRegisterForm /> : <AuctionPage />}
-      </div>
+      <Header />
+      {user ? <AuctionPage /> : <LoginRegisterForm />}
     </>
   );
 }
 
-// ----- EXPORT ROOT AVEC PROVIDER -----
+// --- EXPORT ---
 export default function RootApp() {
   return (
     <AuthProvider>

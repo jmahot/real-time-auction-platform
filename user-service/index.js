@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 // Connect MongoDB
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGODB_URI)
 
 // User schema
 const userSchema = new mongoose.Schema({

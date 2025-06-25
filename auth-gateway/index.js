@@ -1,36 +1,25 @@
-require('dotenv').config();
-const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
-const jwt = require('jsonwebtoken');
+import express from "express";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import authRoutes from "./routes/authRoutes.js";
+import cors from "cors";
+
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4003;
-const JWT_SECRET = process.env.JWT_SECRET;
+app.use(cors());
+app.use(express.json());
 
-// Middleware pour vérifier le token
-app.use((req, res, next) => {
-  if (req.path === '/login' || req.path === '/register') {
-    return next();
-  }
+// Connexion MongoDB
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => console.log("Connecté à MongoDB Auth-Gateway"))
+  .catch((err) => console.error("Erreur MongoDB :", err));
 
-  const token = req.headers['authorization'];
-  if (!token) {
-    return res.status(401).json({ message: 'Token manquant' });
-  }
+// Routes
+app.use("/auth", authRoutes);
 
-  try {
-    jwt.verify(token, JWT_SECRET);
-    next();
-  } catch (err) {
-    res.status(401).json({ message: 'Token invalide' });
-  }
-});
-
-// Proxies vers les autres services
-app.use('/api/users', createProxyMiddleware({ target: 'http://localhost:4000', changeOrigin: true }));
-app.use('/api/auctions', createProxyMiddleware({ target: 'http://localhost:4001', changeOrigin: true }));
-app.use('/api/bids', createProxyMiddleware({ target: 'http://localhost:4002', changeOrigin: true }));
-
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Auth Gateway running on port ${PORT}`);
 });
